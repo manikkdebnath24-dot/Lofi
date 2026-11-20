@@ -17,24 +17,41 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.10.2"
+
+      - name: Setup Android SDK packages
+        run: |
+          SDK="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          echo "Using SDK at $SDK"
+          SM="$(command -v sdkmanager || true)"
+          if [ -z "$SM" ]; then
+            SM="$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n1)"
+          fi
+          echo "sdkmanager: $SM"
+          yes | "$SM" --licenses > /dev/null 2>&1 || true
+          "$SM" "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Build release APK (unsigned)
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-      - name: Build release APK
-        run: gradle assembleRelease --stacktrace
+      - name: Show outputs
+        if: always()
+        run: |
+          find app/build/outputs -name "*.apk" -exec ls -lh {} \;
 
       - name: Upload APKs
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: lofi-apks
           path: app/build/outputs/apk/**/*.apk
+          if-no-files-found: warn
+          retention-days: 14
